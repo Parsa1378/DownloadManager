@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -55,5 +56,34 @@ func downloadInRange(url string, start, end int64, wg *sync.WaitGroup, filename 
 	}
 }
 func main() {
+	var filename string
 
+	flag.StringVar(&filename, "-filename", "", "Name of the file to save as (optional)")
+	flag.Parse()
+
+	args := flag.Args()
+	// if len(args) != 1 {
+
+	// }
+	url := args[0]
+	fileSize, err := getFileSize(url)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
+
+	const chunkSize = 10 * 1024 * 1024 //10 MB
+	nChunk := chunkSize / fileSize
+	var wg *sync.WaitGroup
+	for i := int64(0); i < int64(nChunk); i++ {
+		start := i * chunkSize
+		end := chunkSize * (i + 1)
+		if end > fileSize {
+			end = fileSize
+		}
+		wg.Add(1)
+		go downloadInRange(url, start, end, wg, filename)
+	}
+	wg.Wait()
+	fmt.Printf("Download Completed")
 }
