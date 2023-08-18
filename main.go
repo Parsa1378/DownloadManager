@@ -1,17 +1,20 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 func getFileSize(url string) (int64, error) {
-	resp, err := http.Head(url)
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+	resp, err := client.Head(url)
 	if err != nil {
 		return 0, err
 	}
@@ -24,7 +27,7 @@ func getFileSize(url string) (int64, error) {
 
 func downloadInRange(url string, start, end int64, wg *sync.WaitGroup, filename string) {
 	defer wg.Done()
-	client := *&http.Client{}
+	client := &http.Client{}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	res, err := client.Do(req)
@@ -40,7 +43,6 @@ func downloadInRange(url string, start, end int64, wg *sync.WaitGroup, filename 
 		saveFilename = filename
 	}
 
-	//create or open the file
 	file, err := os.OpenFile(saveFilename, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		fmt.Printf("Error in opening the file: %s", saveFilename)
@@ -56,34 +58,38 @@ func downloadInRange(url string, start, end int64, wg *sync.WaitGroup, filename 
 	}
 }
 func main() {
+	start := time.Now()
 	var filename string
-
-	flag.StringVar(&filename, "-filename", "", "Name of the file to save as (optional)")
-	flag.Parse()
-
-	args := flag.Args()
-	// if len(args) != 1 {
-
-	// }
+	args := os.Args[1:]
+	if len(args) < 1 {
+		fmt.Println("Usage: dm <URL> [options]")
+		return
+	}
+	if len(args) > 1 {
+		filename = args[2]
+	}
 	url := args[0]
 	fileSize, err := getFileSize(url)
+	fmt.Println(fileSize)
 	if err != nil {
 		fmt.Print(err)
 		return
 	}
 
-	const chunkSize = 10 * 1024 * 1024 //10 MB
-	nChunk := chunkSize / fileSize
-	var wg *sync.WaitGroup
-	for i := int64(0); i < int64(nChunk); i++ {
+	const chunkSize = 50 * 1024 * 1024 //50 MB
+	nChunk := fileSize / chunkSize
+	fmt.Println(nChunk)
+	var wg sync.WaitGroup
+	for i := int64(0); i < nChunk; i++ {
 		start := i * chunkSize
 		end := chunkSize * (i + 1)
 		if end > fileSize {
 			end = fileSize
 		}
 		wg.Add(1)
-		go downloadInRange(url, start, end, wg, filename)
+		go downloadInRange(url, start, end-1, &wg, filename)
 	}
 	wg.Wait()
-	fmt.Printf("Download Completed")
+	elapsed := time.Since(start)
+	fmt.Printf("Download Completed in:%v\n", elapsed)
 }
